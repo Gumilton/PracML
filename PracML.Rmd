@@ -1,0 +1,125 @@
+---
+title: "Barbell Lifts Correctly or Incorrectly?"
+output: html_document
+---
+## Introduction ##
+
+Devices can collect information about activities during exercises. Based on these information, one can predict whether the movement or action is correctly performed to check whether a certain aim of exercise can be achieved. Here our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict whether they perform correctly based on the training data and machine learning algorithm trained.
+
+## Loading Data ##
+
+In this exercise we require R packages caret and randomForest.
+```{r library}
+library(caret)
+library(randomForest)
+```
+
+We read in the training data set and the validation data used to predict performance. We read in the training data as trainraw which will be split into training and testing set.
+
+```{r readin, cache=TRUE}
+trainraw <- read.csv("./pml-training.csv")
+validation <- read.csv("./pml-testing.csv")
+```
+
+## Filter and Clean Data ##
+
+After read in the validation data, we removed the predictors which are all missing values in validation data from both validation data and training data because predicting model based on missing value is meaningless.
+
+```{r clean, cache=TRUE}
+# remove columns that are all NAs in testing set.
+
+all_na <- function(dat){
+  c <- c()
+  for (i in 1:ncol(dat)){
+    if(all(is.na(dat[,i]))){ c <- c(c,i)}
+  }
+  return (c)
+}
+
+all_na_col <- all_na(validation)
+
+train_f <- trainraw[,-all_na_col]
+
+validation_f <- validation[,-all_na_col]
+```
+
+We next removed the predictors which has near zero variance because we will not rely on small percentage of variance to train the model.
+
+```{r filter1}
+# remove near zero column
+train_f <- train_f[,-nearZeroVar(train_f)]
+validation_f <- validation_f[,-nearZeroVar(validation_f)]
+```
+
+In order to get better accuracy and more meaningful model, we also removed meaningless predictors such as row number and time stamp.
+
+```{r filter2}
+# remove unmeaningful predictors
+
+train_f <- train_f[,-which(colnames(train_f) %in% 
+                               c("X","user_name","raw_timestamp_part_1",
+                                 "raw_timestamp_part_2","cvtd_timestamp"))]
+# For validation set keep problem_id for submission
+validation_f <- validation_f[,-which(colnames(validation_f) %in% 
+                               c("X","user_name","raw_timestamp_part_1",
+                                 "raw_timestamp_part_2","cvtd_timestamp"))]
+
+
+```
+
+Now we have ```r  dim(train_f)[1]``` individual observations and ```r dim(train_f)[2]``` predictors in data used for training, including outcome predictor.
+
+## Model Training ##
+
+Here we subset the filtered raw training data into training and testing for training and cross-testing purposes, respectively.
+
+```{r testing, cache=TRUE}
+inTrain <- createDataPartition(y=train_f$classe, p=0.75, list=FALSE)
+training <- train_f[inTrain,]
+testing <- train_f[-inTrain,]
+```
+
+Now we have ```r dim(training)[1]``` samples for training and ```r dim(testing)[1]``` samples for cross-testing.
+
+Here we apply random forest algorithm to predict and classify training data.
+
+```{r randomForest, cache=TRUE}
+
+rf <- randomForest(classe ~ ., data=training, keep.forest=T, importance=TRUE)
+
+```
+
+The model fits training data well shown as below:
+```{r trainingacc}
+confusionMatrix(training$classe,predict(rf,training[,-54]))
+```
+
+All the predictions are correct as with the reference, suggesting the model is very accurate. We expect the accuracy is 100% since the model is built based on the training data.
+
+Here we test this model on our cross-testing data, results are shown as below:
+```{r testingacc}
+confusionMatrix(testing$classe,predict(rf,testing[,-54]))
+```
+
+All the predictions match well with reference suggesting our algorithm functions very well on these set of data. We expect the accuracy to be over 99% to qualify the model used for future prediction. The out of sample error is expected since the data in the cross-validation set is what the model never meets.
+
+## Prediction ##
+
+Now since the accuracy of model prediction is high enough, we can use this model to predict the performance on the validation data set.
+
+```{r predict}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+ans <- predict(rf,validation[,-56])
+pml_write_files(as.character(ans))
+
+cbind(problem_id=validation_f[,54],Prediction=as.character(ans))
+```
+
+Above is the prediction result.
